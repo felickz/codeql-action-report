@@ -6,6 +6,9 @@ branding:
   color: 'blue'
 
 inputs:
+  sarif:
+    description: 'Path to the SARIF file (use steps.<analyze-step-id>.outputs.sarif-output from codeql-action/analyze)'
+    required: true
   language:
     description: 'The CodeQL language to generate a report for (e.g., javascript, python, csharp)'
     required: true
@@ -21,10 +24,11 @@ runs:
     - name: Generate SARIF HTML report
       shell: bash
       run: |
-        if [ -f "sarif-results/${{ inputs.language }}.sarif" ]; then
-          sarif html --output ./sarif_${{ inputs.language }}.html --no-autotrim sarif-results/${{ inputs.language }}.sarif
+        SARIF_FILE="${{ inputs.sarif }}/${{ inputs.language }}.sarif"
+        if [ -f "$SARIF_FILE" ]; then
+          sarif html --output ./sarif_${{ inputs.language }}.html --no-autotrim "$SARIF_FILE"
         else
-          echo "SARIF file not found: sarif-results/${{ inputs.language }}.sarif"
+          echo "SARIF file not found: $SARIF_FILE"
         fi
 
     - name: Upload SARIF HTML report
