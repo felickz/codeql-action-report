@@ -1,0 +1,35 @@
+name: 'CodeQL SARIF Report'
+description: 'Generate and upload SARIF HTML reports from CodeQL analysis'
+author: 'felickz'
+branding:
+  icon: 'file-text'
+  color: 'blue'
+
+inputs:
+  language:
+    description: 'The CodeQL language to generate a report for (e.g., javascript, python, csharp)'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install sarif-tools
+      shell: bash
+      run: |
+        pip install sarif-tools==2.0.0
+
+    - name: Generate SARIF HTML report
+      shell: bash
+      run: |
+        if [ -f "sarif-results/${{ inputs.language }}.sarif" ]; then
+          sarif html --output ./sarif_${{ inputs.language }}.html --no-autotrim sarif-results/${{ inputs.language }}.sarif
+        else
+          echo "SARIF file not found: sarif-results/${{ inputs.language }}.sarif"
+        fi
+
+    - name: Upload SARIF HTML report
+      uses: actions/upload-artifact@v4
+      with:
+        name: sarif-html-report-${{ inputs.language }}
+        path: sarif_${{ inputs.language }}.html
+        if-no-files-found: warn
