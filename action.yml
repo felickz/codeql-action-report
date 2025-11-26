@@ -7,7 +7,7 @@ branding:
 
 inputs:
   sarif:
-    description: 'Path to the SARIF file (use steps.<analyze-step-id>.outputs.sarif-output from codeql-action/analyze)'
+    description: 'Path to the SARIF output directory (use steps.<analyze-step-id>.outputs.sarif-output from codeql-action/analyze)'
     required: true
   language:
     description: 'The CodeQL language to generate a report for (e.g., javascript, python, csharp)'
