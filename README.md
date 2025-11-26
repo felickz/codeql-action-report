@@ -33,13 +33,13 @@ jobs:
         uses: github/codeql-action/autobuild@v3
         
       - name: Perform CodeQL Analysis
+        id: analyze
         uses: github/codeql-action/analyze@v3
-        with:
-          output: sarif-results
           
       - name: Generate SARIF Report
         uses: felickz/codeql-action-report@main
         with:
+          sarif: ${{ steps.analyze.outputs.sarif-output }}
           language: ${{ matrix.language }}
 ```
 
@@ -47,6 +47,7 @@ jobs:
 
 | Input | Description | Required |
 |-------|-------------|----------|
+| `sarif` | Path to the SARIF output directory (use `steps.<analyze-step-id>.outputs.sarif-output` from codeql-action/analyze) | Yes |
 | `language` | The CodeQL language to generate a report for (e.g., javascript, python, csharp) | Yes |
 
 ## Outputs
@@ -56,7 +57,7 @@ This action uploads an artifact named `sarif-html-report-{language}` containing 
 ## Requirements
 
 - Python must be available in the runner environment
-- SARIF files must be located in `sarif-results/{language}.sarif`
+- The `sarif` input must point to the SARIF output directory from the CodeQL analyze step
 
 ## License
 
