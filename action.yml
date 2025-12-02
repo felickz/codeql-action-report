@@ -18,6 +18,12 @@ runs:
       run: |
         pip install sarif-tools==2.0.0
 
+    - name: Set environment variables
+      shell: bash
+      run: |
+        REPO_NAME="$(echo '${{ github.repository }}' | tr '/' '-')"
+        echo "REPO_NAME=$REPO_NAME" >> $GITHUB_ENV
+
     - name: Generate SARIF HTML reports
       shell: bash
       env:
@@ -54,7 +60,7 @@ runs:
     - name: Upload SARIF HTML reports
       uses: actions/upload-artifact@v4
       with:
-        name: ${{ replace(github.repository, '/', '-') }}-${{github.sha}}-sarif-html-reports
+        name: ${{ env.REPO_NAME }}-${{github.sha}}-sarif-html-reports
         path: sarif_*.html
         if-no-files-found: warn
 
@@ -63,7 +69,7 @@ runs:
       continue-on-error: true
       shell: bash
       run: |
-        if ! gh api /repos/${{ github.repository }}/dependency-graph/sbom  > ${{ replace(github.repository, '/', '-') }}-${{github.sha}}-sbom.spdx.json 2>/dev/null; then
+        if ! gh api /repos/${{ github.repository }}/dependency-graph/sbom  > "${REPO_NAME}-${{github.sha}}-sbom.spdx.json" 2>/dev/null; then
           echo "::warning::Failed to generate SBOM. The dependency graph may not be enabled for this repository."
           exit 1
         fi
@@ -72,8 +78,8 @@ runs:
       if: steps.generate-sbom.outcome == 'success'
       uses: actions/upload-artifact@v4
       with:
-        name: ${{ replace(github.repository, '/', '-') }}-${{github.sha}}-sbom
-        path: ${{ replace(github.repository, '/', '-') }}-${{github.sha}}-sbom.spdx.json
+        name: ${{ env.REPO_NAME }}-${{github.sha}}-sbom
+        path: ${{ env.REPO_NAME }}-${{github.sha}}-sbom.spdx.json
         if-no-files-found: warn
 
     - name: Attest Report with SBOM
@@ -81,7 +87,7 @@ runs:
       uses: actions/attest-sbom@v3
       with:
         subject-path: sarif_*.html, *.sarif
-        sbom-path: ${{ replace(github.repository, '/', '-') }}-${{github.sha}}-sbom.spdx.json
+        sbom-path: ${{ env.REPO_NAME }}-${{github.sha}}-sbom.spdx.json
 
     - name: Attest
       if: steps.generate-sbom.outcome != 'success'
