@@ -20,8 +20,10 @@ runs:
 
     - name: Generate SARIF HTML reports
       shell: bash
+      env:
+        INPUT_SARIF_DIR: ${{ inputs.sarif-input }}
       run: |
-        SARIF_DIR="${{ inputs.sarif-input }}"
+        SARIF_DIR="$INPUT_SARIF_DIR"
         if [ -z "$SARIF_DIR" ]; then
           SARIF_DIR="${CODEQL_ACTION_SARIF_RESULTS_OUTPUT_DIR}"
         fi
@@ -36,17 +38,18 @@ runs:
           exit 1
         fi
         
-        SARIF_FILES=$(find "$SARIF_DIR" -maxdepth 1 -name "*.sarif" -type f)
-        if [ -z "$SARIF_FILES" ]; then
-          echo "No .sarif files found in $SARIF_DIR"
-          exit 1
-        fi
-        
-        for SARIF_FILE in $SARIF_FILES; do
+        FOUND_FILES=0
+        while IFS= read -r -d '' SARIF_FILE; do
           BASENAME=$(basename "$SARIF_FILE" .sarif)
           echo "Generating HTML report for $SARIF_FILE"
           sarif html --output "./sarif_${BASENAME}.html" --no-autotrim "$SARIF_FILE"
-        done
+          FOUND_FILES=1
+        done < <(find "$SARIF_DIR" -maxdepth 1 -name "*.sarif" -type f -print0)
+        
+        if [ "$FOUND_FILES" -eq 0 ]; then
+          echo "No .sarif files found in $SARIF_DIR"
+          exit 1
+        fi
 
     - name: Upload SARIF HTML reports
       uses: actions/upload-artifact@v4
