@@ -27,17 +27,17 @@ runs:
         if [ -z "$SARIF_DIR" ]; then
           SARIF_DIR="${CODEQL_ACTION_SARIF_RESULTS_OUTPUT_DIR}"
         fi
-        
+
         if [ -z "$SARIF_DIR" ]; then
           echo "Error: No SARIF directory specified and CODEQL_ACTION_SARIF_RESULTS_OUTPUT_DIR is not set"
           exit 1
         fi
-        
+
         if [ ! -d "$SARIF_DIR" ]; then
           echo "Error: SARIF directory not found: $SARIF_DIR"
           exit 1
         fi
-        
+
         FOUND_FILES=0
         while IFS= read -r -d '' SARIF_FILE; do
           BASENAME=$(basename "$SARIF_FILE" .sarif)
@@ -45,7 +45,7 @@ runs:
           sarif html --output "./sarif_${BASENAME}.html" --no-autotrim "$SARIF_FILE"
           FOUND_FILES=1
         done < <(find "$SARIF_DIR" -maxdepth 1 -name "*.sarif" -type f -print0)
-        
+
         if [ "$FOUND_FILES" -eq 0 ]; then
           echo "No .sarif files found in $SARIF_DIR"
           exit 1
@@ -54,6 +54,37 @@ runs:
     - name: Upload SARIF HTML reports
       uses: actions/upload-artifact@v4
       with:
-        name: sarif-html-reports
+        name: ${{ replace(github.repository, '/', '-') }}-${{github.sha}}-sarif-html-reports
         path: sarif_*.html
         if-no-files-found: warn
+
+    - name: Generate SBOM
+      id: generate-sbom
+      continue-on-error: true
+      shell: bash
+      run: |
+        if ! gh api /repos/${{ github.repository }}/dependency-graph/sbom  > ${{ replace(github.repository, '/', '-') }}-${{github.sha}}-sbom.spdx.json 2>/dev/null; then
+          echo "::warning::Failed to generate SBOM. The dependency graph may not be enabled for this repository."
+          exit 1
+        fi
+
+    - name: Upload SBOM
+      if: steps.generate-sbom.outcome == 'success'
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ replace(github.repository, '/', '-') }}-${{github.sha}}-sbom
+        path: ${{ replace(github.repository, '/', '-') }}-${{github.sha}}-sbom.spdx.json
+        if-no-files-found: warn
+
+    - name: Attest Report with SBOM
+      if: steps.generate-sbom.outcome == 'success'
+      uses: actions/attest-sbom@v3
+      with:
+        subject-path: sarif_*.html, *.sarif
+        sbom-path: ${{ replace(github.repository, '/', '-') }}-${{github.sha}}-sbom.spdx.json
+
+    - name: Attest
+      if: steps.generate-sbom.outcome != 'success'
+      uses: actions/attest-build-provenance@v3
+      with:
+        subject-path: sarif_*.html, *.sarif
