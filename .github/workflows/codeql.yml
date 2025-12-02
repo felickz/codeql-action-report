@@ -87,4 +87,7 @@ jobs:
       with:
         category: "/language:${{matrix.language}}"
 
-    - run: ls -ls
+    - name: List files in CODEQL_ACTION_SARIF_RESULTS_OUTPUT_DIR
+      run: |
+        cd "${CODEQL_ACTION_SARIF_RESULTS_OUTPUT_DIR}"
+        ls -ls
