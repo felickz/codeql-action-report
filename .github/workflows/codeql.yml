@@ -10,17 +10,20 @@ jobs:
   analyze:
     name: Analyze (${{ matrix.language }})
     runs-on: ${{ (matrix.language == 'swift' && 'macos-latest') || 'ubuntu-latest' }}
-    permissions:      
-      security-events: write  # required for all workflows      
-      packages: read # required to fetch internal or private CodeQL packs      
+    permissions:
+      security-events: write  # required for all workflows
+      packages: read # required to fetch internal or private CodeQL packs
       actions: read # only required for workflows in private repositories
       contents: read # only required for workflows in private repositories
+      # Attestations + SBOM
+      id-token: write
+      attestations: write
     strategy:
       fail-fast: false
       matrix:
         include:
         - language: actions
-          build-mode: none          
+          build-mode: none
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
