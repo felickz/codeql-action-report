@@ -30,6 +30,7 @@ jobs:
         languages: ${{ matrix.language }}
         build-mode: ${{ matrix.build-mode }}
     - name: Perform CodeQL Analysis
+      id: analyze
       uses: github/codeql-action/analyze@v4
       with:
         category: "/language:${{matrix.language}}"
@@ -40,4 +41,4 @@ jobs:
     - name: Upload Artifacts to Workflow
       uses: actions/upload-artifact@v4
       with:            
-        path: ${{ env.CODEQL_ACTION_SARIF_RESULTS_OUTPUT_DIR }}
+        path: ${{ steps.analyze.outputs.sarif-output }}
