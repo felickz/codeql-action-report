@@ -25,18 +25,18 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        
+
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
         with:
           languages: ${{ matrix.language }}
-          
+
       - name: Autobuild
         uses: github/codeql-action/autobuild@v3
-        
+
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
-          
+
       - name: Generate SARIF Report
         uses: felickz/codeql-action-report@main
 ```
@@ -49,7 +49,7 @@ If you need to specify a custom SARIF directory, you can use the `sarif-input` p
       - name: Perform CodeQL Analysis
         id: analyze
         uses: github/codeql-action/analyze@v3
-          
+
       - name: Generate SARIF Report
         uses: felickz/codeql-action-report@main
         with:
@@ -66,9 +66,26 @@ If you need to specify a custom SARIF directory, you can use the `sarif-input` p
 
 This action uploads an artifact named `sarif-html-reports` containing HTML reports for all SARIF files found.
 
+## Dependencies
+
+This action relies on the following key dependency:
+
+### [sarif-tools](https://github.com/microsoft/sarif-tools)
+
+**sarif-tools** is a Python package by Microsoft that provides utilities for working with SARIF (Static Analysis Results Interchange Format) files. This action uses sarif-tools to convert SARIF files into human-readable HTML reports.
+- **Key Functionality**: All HTML report generation is performed by the `sarif html` command from this package
+- **GitHub**: https://github.com/microsoft/sarif-tools
+- **PyPI**: https://pypi.org/project/sarif-tools/
+
+### Dependency Graph
+
+Optional - requires enabling GitHub's dependency graph for your repository to generate an SBOM.  The SBOM will be used to attest the html and sarif artifacts.
+
+
 ## Requirements
 
-- Python must be available in the runner environment
+- Python must be available in the runner environment (pre-installed on all GitHub-hosted runners)
+- pip package manager (pre-installed on all GitHub-hosted runners)
 
 ## License
 

@@ -123,6 +123,7 @@ runs:
         if-no-files-found: warn
 
     - name: Attest Report with SBOM
+      id: attest-sbom
       if: steps.generate-sbom.outcome == 'success'
       uses: actions/attest-sbom@v3
       with:
@@ -130,6 +131,7 @@ runs:
         sbom-path: ${{ env.REPO_NAME }}-${{github.sha}}-sbom.spdx.json
 
     - name: Attest
+      id: attest-provenance
       if: steps.generate-sbom.outcome != 'success'
       uses: actions/attest-build-provenance@v3
       with:
@@ -142,6 +144,10 @@ runs:
         HTML_ARTIFACT_URL: ${{ steps.upload-sarif-html.outputs.artifact-url }}
         SARIF_ARTIFACT_URL: ${{ steps.upload-sarif.outputs.artifact-url }}
         SBOM_ARTIFACT_URL: ${{ steps.upload-sbom.outputs.artifact-url }}
+        SBOM_ATTESTATION_URL: ${{ steps.attest-sbom.outputs.attestation-url }}
+        PROVENANCE_ATTESTATION_URL: ${{ steps.attest-provenance.outputs.attestation-url }}
+        SBOM_GENERATED: ${{ steps.generate-sbom.outcome == 'success' && 'true' || 'false' }}
+        GITHUB_REPO_OWNER: ${{ github.repository_owner }}
       run: |
         SARIF_DIR="$INPUT_SARIF_DIR"
         if [ -z "$SARIF_DIR" ]; then
@@ -162,6 +168,10 @@ runs:
         fi
 
         SARIF_FILE="${SARIF_FILES[0]}"
+        BASENAME=$(basename "$SARIF_FILE" .sarif)
+        HTML_FILENAME="sarif_${BASENAME}.html"
+        SARIF_FILENAME=$(basename "$SARIF_FILE")
+        SBOM_FILENAME="${REPO_NAME}-${{github.sha}}-sbom.spdx.json"
 
         # Extract information from SARIF file
         CODEQL_VERSION=$(jq -r '.runs[0].tool.driver.semanticVersion // "N/A"' "$SARIF_FILE")
@@ -200,11 +210,6 @@ runs:
         cat >> $GITHUB_STEP_SUMMARY << EOF
         # :shield: CodeQL Scan Summary - ${CODEQL_LANGUAGE}
 
-        ## 📦 Artifacts
-        - 📊 [HTML Report](${HTML_ARTIFACT_URL})
-        - 📄 [SARIF Files](${SARIF_ARTIFACT_URL})
-        - 📋 [SBOM](${SBOM_ARTIFACT_URL:-N/A})
-
         ## Scan Information
         | Property | Value |
         |----------|-------|
@@ -221,6 +226,45 @@ runs:
         |--------|-------|
         | **Detected Files** | ${DETECTED_FILES} |
         | **Extracted Files** | ${EXTRACTED_FILES} |
+
+        ## 📦 Artifacts
+        - 📊 [HTML Report](${HTML_ARTIFACT_URL}) - \`${HTML_FILENAME}\`
+        - 📄 [SARIF File](${SARIF_ARTIFACT_URL}) - \`${SARIF_FILENAME}\`
+        - 📋 [SBOM](${SBOM_ARTIFACT_URL:-N/A}) - \`${SBOM_FILENAME}\`
+
+        ## 🔐 Attestations
+        EOF
+
+        # Add attestation info based on which was generated
+        if [ "${SBOM_GENERATED}" = "true" ]; then
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+        - ✅ [SBOM Attestation](${SBOM_ATTESTATION_URL})
+
+        **Verify Attestations:**
+        \`\`\`bash
+        # Verify HTML report with SBOM attestation
+        gh attestation verify --owner ${GITHUB_REPO_OWNER} --predicate-type "https://spdx.dev/Document/v2.3" ${HTML_FILENAME}
+
+        # Verify SARIF file with SBOM attestation
+        gh attestation verify --owner ${GITHUB_REPO_OWNER} --predicate-type "https://spdx.dev/Document/v2.3" ${SARIF_FILENAME}
+        \`\`\`
+        EOF
+        else
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+        - ✅ [Build Provenance Attestation](${PROVENANCE_ATTESTATION_URL})
+
+        **Verify Attestations:**
+        \`\`\`bash
+        # Verify HTML report with build provenance
+        gh attestation verify --owner ${GITHUB_REPO_OWNER} ${HTML_FILENAME}
+
+        # Verify SARIF file with build provenance
+        gh attestation verify --owner ${GITHUB_REPO_OWNER} ${SARIF_FILENAME}
+        \`\`\`
+        EOF
+        fi
+
+        cat >> $GITHUB_STEP_SUMMARY << EOF
 
         ---
         *Generated on $(date -u '+%Y-%m-%d %H:%M:%S UTC')*
