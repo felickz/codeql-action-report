@@ -59,7 +59,7 @@ runs:
 
     - name: Upload SARIF HTML reports
       id: upload-sarif-html
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v5
       with:
         name: ${{ env.REPO_NAME }}-${{github.sha}}-sarif-html-reports
         path: sarif_*.html
@@ -82,7 +82,7 @@ runs:
 
     - name: Upload SARIF files
       id: upload-sarif
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v5
       with:
         name: ${{ env.REPO_NAME }}-${{github.sha}}-sarif
         path: "*.sarif"
@@ -116,7 +116,7 @@ runs:
     - name: Upload SBOM
       id: upload-sbom
       if: steps.generate-sbom.outcome == 'success'
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v5
       with:
         name: ${{ env.REPO_NAME }}-${{github.sha}}-sbom
         path: ${{ env.REPO_NAME }}-${{github.sha}}-sbom.spdx.json
