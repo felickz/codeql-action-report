@@ -216,20 +216,45 @@ runs:
         # Count results by severity level (joining with rule definitions)
         TOTAL_RESULTS=$(jq -r '[.runs[0].results[]] | length' "$SARIF_FILE")
 
-        # Create a map of rule IDs to levels, then count results by level
+        # Create a map of rule IDs to levels and security-severity, then count results by level
+        # Only count results that do NOT have security-severity (those are counted in security findings)
         ERROR_RESULTS=$(jq -r '
-          (.runs[0].tool.extensions[0].rules | map({(.id): .defaultConfiguration.level}) | add) as $ruleMap |
-          [.runs[0].results[] | select($ruleMap[.ruleId] == "error")] | length
+          (.runs[0].tool.extensions[0].rules | map({
+            (.id): {
+              level: .defaultConfiguration.level,
+              securitySeverity: (.properties."security-severity" // null | tonumber?)
+            }
+          }) | add) as $ruleMap |
+          [.runs[0].results[] |
+            $ruleMap[.ruleId] as $rule |
+            select($rule.securitySeverity == null and $rule.level == "error")
+          ] | length
         ' "$SARIF_FILE")
 
         WARNING_RESULTS=$(jq -r '
-          (.runs[0].tool.extensions[0].rules | map({(.id): .defaultConfiguration.level}) | add) as $ruleMap |
-          [.runs[0].results[] | select($ruleMap[.ruleId] == "warning")] | length
+          (.runs[0].tool.extensions[0].rules | map({
+            (.id): {
+              level: .defaultConfiguration.level,
+              securitySeverity: (.properties."security-severity" // null | tonumber?)
+            }
+          }) | add) as $ruleMap |
+          [.runs[0].results[] |
+            $ruleMap[.ruleId] as $rule |
+            select($rule.securitySeverity == null and $rule.level == "warning")
+          ] | length
         ' "$SARIF_FILE")
 
         NOTE_RESULTS=$(jq -r '
-          (.runs[0].tool.extensions[0].rules | map({(.id): .defaultConfiguration.level}) | add) as $ruleMap |
-          [.runs[0].results[] | select($ruleMap[.ruleId] == "note")] | length
+          (.runs[0].tool.extensions[0].rules | map({
+            (.id): {
+              level: .defaultConfiguration.level,
+              securitySeverity: (.properties."security-severity" // null | tonumber?)
+            }
+          }) | add) as $ruleMap |
+          [.runs[0].results[] |
+            $ruleMap[.ruleId] as $rule |
+            select($rule.securitySeverity == null and $rule.level == "note")
+          ] | length
         ' "$SARIF_FILE")
 
         NONE_RESULTS=$(jq -r '
@@ -324,19 +349,21 @@ runs:
         ### Code Security Findings
         | Severity (CVSS) | Count |
         |----------|-------|
-        | **Critical (9.0-10.0)** | ${CRITICAL_SECURITY} |
-        | **High (7.0-8.9)** | ${HIGH_SECURITY} |
-        | **Medium (4.0-6.9)** | ${MEDIUM_SECURITY} |
-        | **Low (0.1-3.9)** | ${LOW_SECURITY} |
+        | 🔴 **Critical (9.0-10.0)** | ${CRITICAL_SECURITY} |
+        | 🟠 **High (7.0-8.9)** | ${HIGH_SECURITY} |
+        | 🟡 **Medium (4.0-6.9)** | ${MEDIUM_SECURITY} |
+        | ⚪ **Low (0.1-3.9)** | ${LOW_SECURITY} |
 
         ### Code Quality Findings
         | Severity | Count |
         |----------|-------|
-        | **Error** | ${ERROR_RESULTS} |
-        | **Warning** | ${WARNING_RESULTS} |
-        | **Note** | ${NOTE_RESULTS} |
+        | 🔴 **Error** | ${ERROR_RESULTS} |
+        | 🟡 **Warning** | ${WARNING_RESULTS} |
+        | ⚪ **Note** | ${NOTE_RESULTS} |
 
         ### Diagnostics
+        | Metric | Count |
+        |----------|-------|
         | **Metrics Queries** | ${NONE_RESULTS} |
         | **Total Security + Quality** | ${TOTAL_RESULTS} |
 
