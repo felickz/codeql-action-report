@@ -109,3 +109,86 @@ runs:
       uses: actions/attest-build-provenance@v3
       with:
         subject-path: sarif_*.html, *.sarif
+
+    - name: Generate CodeQL Scan Summary
+      shell: bash
+      env:
+        INPUT_SARIF_DIR: ${{ inputs.sarif-input }}
+      run: |
+        SARIF_DIR="$INPUT_SARIF_DIR"
+        if [ -z "$SARIF_DIR" ]; then
+          SARIF_DIR="${CODEQL_ACTION_SARIF_RESULTS_OUTPUT_DIR}"
+        fi
+
+        # Find SARIF files
+        SARIF_FILES=($(find "$SARIF_DIR" -maxdepth 1 -name "*.sarif" -type f))
+        SARIF_COUNT=${#SARIF_FILES[@]}
+
+        if [ "$SARIF_COUNT" -eq 0 ]; then
+          echo "No SARIF file found for summary generation"
+          exit 0
+        fi
+
+        if [ "$SARIF_COUNT" -gt 1 ]; then
+          echo "::warning::Multiple SARIF files found ($SARIF_COUNT). Summary generation for multiple files is not supported. Using the first file: ${SARIF_FILES[0]}"
+        fi
+
+        SARIF_FILE="${SARIF_FILES[0]}"
+
+        # Extract information from SARIF file
+        CODEQL_VERSION=$(jq -r '.runs[0].tool.driver.semanticVersion // "N/A"' "$SARIF_FILE")
+
+        # Find build mode from toolExecutionNotifications
+        BUILD_MODE=$(jq -r '
+          .runs[0].invocations[0].toolExecutionNotifications[] |
+          select(.descriptor.id == "cli/build-mode") |
+          .properties.attributes.buildMode // "N/A"
+        ' "$SARIF_FILE")
+
+        # Count extracted files
+        EXTRACTED_FILES=$(jq -r '
+          [.runs[0].invocations[0].toolExecutionNotifications[] |
+          select(.descriptor.id | contains("diagnostics/successfully-extracted-files")) |
+          .properties.attributes.num_extracted_files // 0] | add // 0
+        ' "$SARIF_FILE")
+
+        # Count detected files (same metric as extracted files typically)
+        DETECTED_FILES=$(jq -r '
+          [.runs[0].invocations[0].toolExecutionNotifications[] |
+          select(.descriptor.id | contains("expected-extracted-files")) |
+          .properties.attributes.num_files_detected // 0] | add // 0
+        ' "$SARIF_FILE")
+
+        # Get environment variables (with defaults if not set)
+        ACTION_VERSION="${CODEQL_ACTION_VERSION:-N/A}"
+        SCAN_STARTED="${CODEQL_WORKFLOW_STARTED_AT:-N/A}"
+        ANALYSIS_KEY="${CODEQL_ACTION_ANALYSIS_KEY:-N/A}"
+
+        # Generate markdown summary
+        cat >> $GITHUB_STEP_SUMMARY << EOF
+        # :shield: CodeQL Scan Summary
+
+        ## Scan Information
+        | Property | Value |
+        |----------|-------|
+        | **CodeQL Action Version** | \`${ACTION_VERSION}\` |
+        | **Scan Started** | ${SCAN_STARTED} |
+        | **Analysis Category** | \`${ANALYSIS_KEY}\` |
+
+        ## CodeQL Engine Details
+        | Property | Value |
+        |----------|-------|
+        | **CodeQL CLI Version** | \`${CODEQL_VERSION}\` |
+        | **Build Mode** | \`${BUILD_MODE}\` |
+
+        ## Analysis Metrics
+        | Metric | Count |
+        |--------|-------|
+        | **Detected Files** | ${DETECTED_FILES} |
+        | **Extracted Files** | ${EXTRACTED_FILES} |
+
+        ---
+        *Generated on $(date -u '+%Y-%m-%d %H:%M:%S UTC')*
+        EOF
+
+        echo "✅ CodeQL scan summary generated successfully"
