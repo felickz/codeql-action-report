@@ -213,6 +213,10 @@ runs:
         ## Scan Information
         | Property | Value |
         |----------|-------|
+        | **GitHub Repository** | \`${{ github.repository }}\` |
+        | **Ref** | \`${{ github.ref }}\` |
+        | **Commit SHA** | \`${{ github.sha }}\` |
+        | **Triggered By** | \`${{ github.event_name }}\` |
         | **CodeQL Language** | \`${CODEQL_LANGUAGE}\` |
         | **CodeQL Build Mode** | \`${BUILD_MODE}\` |
         | **CodeQL CLI Version** | \`${CODEQL_VERSION}\` |
