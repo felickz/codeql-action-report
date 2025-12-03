@@ -138,6 +138,12 @@ runs:
         # Extract information from SARIF file
         CODEQL_VERSION=$(jq -r '.runs[0].tool.driver.semanticVersion // "N/A"' "$SARIF_FILE")
 
+        # Extract language from automationDetails.id (format: "/language:actions/" -> "actions")
+        CODEQL_LANGUAGE=$(jq -r '.runs[0].automationDetails.id // "N/A" |
+          if . == "N/A" then "N/A"
+          else gsub("^/language:"; "") | gsub("/$"; "") | ascii_upcase
+          end' "$SARIF_FILE")
+
         # Find build mode from toolExecutionNotifications
         BUILD_MODE=$(jq -r '
           .runs[0].invocations[0].toolExecutionNotifications[] |
@@ -164,20 +170,18 @@ runs:
 
         # Generate markdown summary
         cat >> $GITHUB_STEP_SUMMARY << EOF
-        # :shield: CodeQL Scan Summary
+        # :shield: CodeQL Scan Summary - ${CODEQL_LANGUAGE}
 
         ## Scan Information
         | Property | Value |
         |----------|-------|
-        | **CodeQL Action Version** | \`${ACTION_VERSION}\` |
-        | **Scan Started** | ${SCAN_STARTED} |
-        | **Analysis Category** | \`${ANALYSIS_KEY}\` |
-
-        ## CodeQL Engine Details
-        | Property | Value |
-        |----------|-------|
+        | **CodeQL Language** | \`${CODEQL_LANGUAGE}\` |
+        | **CodeQL Build Mode** | \`${BUILD_MODE}\` |
         | **CodeQL CLI Version** | \`${CODEQL_VERSION}\` |
-        | **Build Mode** | \`${BUILD_MODE}\` |
+        | **CodeQL Action Version** | \`${ACTION_VERSION}\` |
+        | **CodeQL Analysis Category** | \`${ANALYSIS_KEY}\` |
+        | **CodeQL Scan Started** | ${SCAN_STARTED} |
+
 
         ## Analysis Metrics
         | Metric | Count |
