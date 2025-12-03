@@ -16,7 +16,7 @@ runs:
     - name: Install sarif-tools
       shell: bash
       run: |
-        pip install sarif-tools==2.0.0
+        pip install -r ${{ github.action_path }}/requirements.txt
 
     - name: Set environment variables
       shell: bash
@@ -74,7 +74,7 @@ runs:
         if [ -z "$SARIF_DIR" ]; then
           SARIF_DIR="${CODEQL_ACTION_SARIF_RESULTS_OUTPUT_DIR}"
         fi
-        
+
         # Copy SARIF files to current directory for upload
         if [ -d "$SARIF_DIR" ]; then
           cp "$SARIF_DIR"/*.sarif . 2>/dev/null || true
