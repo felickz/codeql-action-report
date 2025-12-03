@@ -203,6 +203,16 @@ runs:
           select(.descriptor.id | startswith("cli/expected-extracted-files/"))] | length
         ' "$SARIF_FILE")
 
+        # Extract CodeQL Query Suite (only if it's a builtin suite)
+        QUERY_SUITE=$(jq -r '
+          .runs[0].properties.codeqlConfigSummary.queries[] |
+          select(.type == "builtinSuite") |
+          .uses // empty
+        ' "$SARIF_FILE" | head -n 1)
+        if [ -z "$QUERY_SUITE" ]; then
+          QUERY_SUITE="N/A"
+        fi
+
         # Get environment variables (with defaults if not set)
         ACTION_VERSION="${CODEQL_ACTION_VERSION:-N/A}"
         SCAN_STARTED="${CODEQL_WORKFLOW_STARTED_AT:-N/A}"
@@ -212,7 +222,7 @@ runs:
         cat >> $GITHUB_STEP_SUMMARY << EOF
         # :shield: CodeQL Scan Summary - ${CODEQL_LANGUAGE}
 
-        ## Scan Information
+        ## CodeQL Scan Information
         | Property | Value |
         |----------|-------|
         | **GitHub Repository** | \`${{ github.repository }}\` |
@@ -222,13 +232,14 @@ runs:
         | **Runner Environment** | \`${{ runner.environment }}\` |
         | **CodeQL Language** | \`${CODEQL_LANGUAGE}\` |
         | **CodeQL Build Mode** | \`${BUILD_MODE}\` |
+        | **CodeQL Query Suite** | \`${QUERY_SUITE}\` |
         | **CodeQL CLI Version** | \`${CODEQL_VERSION}\` |
         | **CodeQL Action Version** | \`${ACTION_VERSION}\` |
         | **CodeQL Analysis Category** | \`${ANALYSIS_KEY}\` |
         | **CodeQL Scan Started** | ${SCAN_STARTED} |
 
 
-        ## Analysis Metrics
+        ## CodeQL Analysis Metrics
         | Metric | Count |
         |--------|-------|
         | **Detected Files** | ${DETECTED_FILES} |
@@ -236,7 +247,7 @@ runs:
 
         ## 📦 Artifacts
         - 📊 [HTML Report](${HTML_ARTIFACT_URL}) - \`${HTML_FILENAME}\`
-        - 📄 [SARIF File](${SARIF_ARTIFACT_URL}) - \`${SARIF_FILENAME}\`
+        - 🛡️ [SARIF File](${SARIF_ARTIFACT_URL}) - \`${SARIF_FILENAME}\`
         - 📋 [SBOM](${SBOM_ARTIFACT_URL:-N/A}) - \`${SBOM_FILENAME}\`
 
         ## 🔐 Attestations
