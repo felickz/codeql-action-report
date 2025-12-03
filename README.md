@@ -81,6 +81,11 @@ This action relies on the following key dependency:
 
 Optional - requires enabling GitHub's dependency graph for your repository to generate an SBOM.  The SBOM will be used to attest the html and sarif artifacts.
 
+## Attestations
+
+This action can generate [in-toto](https://in-toto.io/) attestations for the generated SARIF HTML reports and SARIF files. If the dependency graph is enabled for the repository, an SBOM in SPDX format ("https://spdx.dev/Document/v2.3" predicate) will also be generated and attested in the DSSE envelope payload.  Instructions to validate the attestations are provided in the summary.
+
+To use artifact attestations in private or internal repositories, you must be on a GitHub Enterprise Cloud plan.
 
 ## Requirements
 

@@ -96,7 +96,7 @@ runs:
         GH_TOKEN: ${{ github.token }}
       run: |
         echo "Attempting to fetch SBOM from GitHub API..."
-        TEMP_FILE="${REPO_NAME}-${{github.sha}}-sbom-temp.json"
+        TEMP_FILE="sbom-temp.json"
         ERROR_OUTPUT=$(gh api /repos/${{ github.repository }}/dependency-graph/sbom 2>&1 > "$TEMP_FILE")
         EXIT_CODE=$?
 
@@ -109,7 +109,7 @@ runs:
         fi
 
         # Extract the SBOM from the API response (it's nested in a "sbom" key)
-        jq '.sbom' "$TEMP_FILE" > "${REPO_NAME}-${{github.sha}}-sbom.spdx.json"
+        jq '.sbom' "$TEMP_FILE" > "sbom.spdx.json"
         rm "$TEMP_FILE"
         echo "SBOM generated successfully"
 
@@ -119,23 +119,25 @@ runs:
       uses: actions/upload-artifact@v5
       with:
         name: ${{ env.REPO_NAME }}-${{github.sha}}-sbom
-        path: ${{ env.REPO_NAME }}-${{github.sha}}-sbom.spdx.json
+        path: sbom.spdx.json
         if-no-files-found: warn
 
-    - name: Attest Report with SBOM
+    - name: Attest Report and SARIF with SBOM
       id: attest-sbom
       if: steps.generate-sbom.outcome == 'success'
       uses: actions/attest-sbom@v3
       with:
         subject-path: sarif_*.html, *.sarif
-        sbom-path: ${{ env.REPO_NAME }}-${{github.sha}}-sbom.spdx.json
+        sbom-path: sbom.spdx.json
+        show-summary: false # we report in the final summary
 
-    - name: Attest
+    - name: Attest Report and SARIF
       id: attest-provenance
       if: steps.generate-sbom.outcome != 'success'
       uses: actions/attest-build-provenance@v3
       with:
         subject-path: sarif_*.html, *.sarif
+        show-summary: false # we report in the final summary
 
     - name: Generate CodeQL Scan Summary
       shell: bash
@@ -171,7 +173,7 @@ runs:
         BASENAME=$(basename "$SARIF_FILE" .sarif)
         HTML_FILENAME="sarif_${BASENAME}.html"
         SARIF_FILENAME=$(basename "$SARIF_FILE")
-        SBOM_FILENAME="${REPO_NAME}-${{github.sha}}-sbom.spdx.json"
+        SBOM_FILENAME="sbom.spdx.json"
 
         # Extract information from SARIF file
         CODEQL_VERSION=$(jq -r '.runs[0].tool.driver.semanticVersion // "N/A"' "$SARIF_FILE")
@@ -246,10 +248,10 @@ runs:
 
         **Verify Attestations:**
         \`\`\`bash
-        # Verify HTML report with SBOM attestation
+        # Verify HTML report with SBOM attestation SPDX predicate
         gh attestation verify --owner ${GITHUB_REPO_OWNER} --predicate-type "https://spdx.dev/Document/v2.3" ${HTML_FILENAME}
 
-        # Verify SARIF file with SBOM attestation
+        # Verify SARIF file with SBOM attestation SPDX predicate
         gh attestation verify --owner ${GITHUB_REPO_OWNER} --predicate-type "https://spdx.dev/Document/v2.3" ${SARIF_FILENAME}
         \`\`\`
         EOF
