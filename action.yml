@@ -145,18 +145,16 @@ runs:
           .properties.attributes.buildMode // "N/A"
         ' "$SARIF_FILE")
 
-        # Count extracted files
+        # Count extracted files (count notifications with this ID pattern for any language)
         EXTRACTED_FILES=$(jq -r '
           [.runs[0].invocations[0].toolExecutionNotifications[] |
-          select(.descriptor.id | contains("diagnostics/successfully-extracted-files")) |
-          .properties.attributes.num_extracted_files // 0] | add // 0
+          select(.descriptor.id | contains("/diagnostics/successfully-extracted-files"))] | length
         ' "$SARIF_FILE")
 
-        # Count detected files (same metric as extracted files typically)
+        # Count detected files (count notifications with this ID pattern for any language)
         DETECTED_FILES=$(jq -r '
           [.runs[0].invocations[0].toolExecutionNotifications[] |
-          select(.descriptor.id | contains("expected-extracted-files")) |
-          .properties.attributes.num_files_detected // 0] | add // 0
+          select(.descriptor.id | startswith("cli/expected-extracted-files/"))] | length
         ' "$SARIF_FILE")
 
         # Get environment variables (with defaults if not set)
