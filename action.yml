@@ -257,11 +257,6 @@ runs:
           ] | length
         ' "$SARIF_FILE")
 
-        NONE_RESULTS=$(jq -r '
-          (.runs[0].tool.extensions[0].rules | map({(.id): .defaultConfiguration.level}) | add) as $ruleMap |
-          [.runs[0].results[] | select($ruleMap[.ruleId] == "none")] | length
-        ' "$SARIF_FILE")
-
         # Count security findings by CVSS severity (using security-severity property)
         # Only count results that have security-severity defined
         CRITICAL_SECURITY=$(jq -r '
@@ -364,7 +359,6 @@ runs:
         ### Diagnostics
         | Metric | Count |
         |----------|-------|
-        | **Metrics Queries** | ${NONE_RESULTS} |
         | **Total Security + Quality** | ${TOTAL_RESULTS} |
 
         ## 📦 Artifacts
