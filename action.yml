@@ -219,6 +219,7 @@ runs:
         | **Ref** | \`${{ github.ref }}\` |
         | **Commit SHA** | \`${{ github.sha }}\` |
         | **Triggered By** | \`${{ github.event_name }}\` |
+        | **Runner Environment** | \`${{ runner.environment }}\` |
         | **CodeQL Language** | \`${CODEQL_LANGUAGE}\` |
         | **CodeQL Build Mode** | \`${BUILD_MODE}\` |
         | **CodeQL CLI Version** | \`${CODEQL_VERSION}\` |
