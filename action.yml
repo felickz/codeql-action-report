@@ -58,10 +58,34 @@ runs:
         fi
 
     - name: Upload SARIF HTML reports
+      id: upload-sarif-html
       uses: actions/upload-artifact@v4
       with:
         name: ${{ env.REPO_NAME }}-${{github.sha}}-sarif-html-reports
         path: sarif_*.html
+        if-no-files-found: warn
+
+    - name: Copy SARIF files to workspace
+      shell: bash
+      env:
+        INPUT_SARIF_DIR: ${{ inputs.sarif-input }}
+      run: |
+        SARIF_DIR="$INPUT_SARIF_DIR"
+        if [ -z "$SARIF_DIR" ]; then
+          SARIF_DIR="${CODEQL_ACTION_SARIF_RESULTS_OUTPUT_DIR}"
+        fi
+        
+        # Copy SARIF files to current directory for upload
+        if [ -d "$SARIF_DIR" ]; then
+          cp "$SARIF_DIR"/*.sarif . 2>/dev/null || true
+        fi
+
+    - name: Upload SARIF files
+      id: upload-sarif
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ env.REPO_NAME }}-${{github.sha}}-sarif
+        path: "*.sarif"
         if-no-files-found: warn
 
     - name: Generate SBOM
@@ -90,6 +114,7 @@ runs:
         echo "SBOM generated successfully"
 
     - name: Upload SBOM
+      id: upload-sbom
       if: steps.generate-sbom.outcome == 'success'
       uses: actions/upload-artifact@v4
       with:
@@ -114,6 +139,9 @@ runs:
       shell: bash
       env:
         INPUT_SARIF_DIR: ${{ inputs.sarif-input }}
+        HTML_ARTIFACT_URL: ${{ steps.upload-sarif-html.outputs.artifact-url }}
+        SARIF_ARTIFACT_URL: ${{ steps.upload-sarif.outputs.artifact-url }}
+        SBOM_ARTIFACT_URL: ${{ steps.upload-sbom.outputs.artifact-url }}
       run: |
         SARIF_DIR="$INPUT_SARIF_DIR"
         if [ -z "$SARIF_DIR" ]; then
@@ -171,6 +199,11 @@ runs:
         # Generate markdown summary
         cat >> $GITHUB_STEP_SUMMARY << EOF
         # :shield: CodeQL Scan Summary - ${CODEQL_LANGUAGE}
+
+        ## 📦 Artifacts
+        - 📊 [HTML Report](${HTML_ARTIFACT_URL})
+        - 📄 [SARIF Files](${SARIF_ARTIFACT_URL})
+        - 📋 [SBOM](${SBOM_ARTIFACT_URL:-N/A})
 
         ## Scan Information
         | Property | Value |

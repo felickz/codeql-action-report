@@ -42,8 +42,10 @@ jobs:
       uses: ./
       #with:
         # pass any required inputs here
-    - name: Upload Artifacts to Workflow
-      uses: actions/upload-artifact@v4
-      with:
-        name: sarif
-        path: ${{ steps.analyze.outputs.sarif-output }}
+
+    # This is now done via codeql-action-report!
+    # - name: Upload Artifacts to Workflow
+    #   uses: actions/upload-artifact@v4
+    #   with:
+    #     name: sarif
+    #     path: ${{ steps.analyze.outputs.sarif-output }}
