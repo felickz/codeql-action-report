@@ -72,7 +72,8 @@ runs:
         GH_TOKEN: ${{ github.token }}
       run: |
         echo "Attempting to fetch SBOM from GitHub API..."
-        ERROR_OUTPUT=$(gh api /repos/${{ github.repository }}/dependency-graph/sbom 2>&1 > "${REPO_NAME}-${{github.sha}}-sbom.spdx.json")
+        TEMP_FILE="${REPO_NAME}-${{github.sha}}-sbom-temp.json"
+        ERROR_OUTPUT=$(gh api /repos/${{ github.repository }}/dependency-graph/sbom 2>&1 > "$TEMP_FILE")
         EXIT_CODE=$?
 
         if [ $EXIT_CODE -ne 0 ]; then
@@ -82,6 +83,10 @@ runs:
           echo "::warning::Check: Repository Settings > Security > Dependency graph must be enabled"
           exit 1
         fi
+
+        # Extract the SBOM from the API response (it's nested in a "sbom" key)
+        jq '.sbom' "$TEMP_FILE" > "${REPO_NAME}-${{github.sha}}-sbom.spdx.json"
+        rm "$TEMP_FILE"
         echo "SBOM generated successfully"
 
     - name: Upload SBOM
