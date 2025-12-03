@@ -213,6 +213,80 @@ runs:
           QUERY_SUITE="N/A"
         fi
 
+        # Count results by severity level (joining with rule definitions)
+        TOTAL_RESULTS=$(jq -r '[.runs[0].results[]] | length' "$SARIF_FILE")
+
+        # Create a map of rule IDs to levels, then count results by level
+        ERROR_RESULTS=$(jq -r '
+          (.runs[0].tool.extensions[0].rules | map({(.id): .defaultConfiguration.level}) | add) as $ruleMap |
+          [.runs[0].results[] | select($ruleMap[.ruleId] == "error")] | length
+        ' "$SARIF_FILE")
+
+        WARNING_RESULTS=$(jq -r '
+          (.runs[0].tool.extensions[0].rules | map({(.id): .defaultConfiguration.level}) | add) as $ruleMap |
+          [.runs[0].results[] | select($ruleMap[.ruleId] == "warning")] | length
+        ' "$SARIF_FILE")
+
+        NOTE_RESULTS=$(jq -r '
+          (.runs[0].tool.extensions[0].rules | map({(.id): .defaultConfiguration.level}) | add) as $ruleMap |
+          [.runs[0].results[] | select($ruleMap[.ruleId] == "note")] | length
+        ' "$SARIF_FILE")
+
+        NONE_RESULTS=$(jq -r '
+          (.runs[0].tool.extensions[0].rules | map({(.id): .defaultConfiguration.level}) | add) as $ruleMap |
+          [.runs[0].results[] | select($ruleMap[.ruleId] == "none")] | length
+        ' "$SARIF_FILE")
+
+        # Count security findings by CVSS severity (using security-severity property)
+        # Only count results that have security-severity defined
+        CRITICAL_SECURITY=$(jq -r '
+          (.runs[0].tool.extensions[0].rules | map({
+            (.id): {
+              securitySeverity: (.properties."security-severity" // null | tonumber?)
+            }
+          }) | add) as $ruleMap |
+          [.runs[0].results[] |
+            $ruleMap[.ruleId] as $rule |
+            select($rule.securitySeverity != null and $rule.securitySeverity >= 9.0)
+          ] | length
+        ' "$SARIF_FILE")
+
+        HIGH_SECURITY=$(jq -r '
+          (.runs[0].tool.extensions[0].rules | map({
+            (.id): {
+              securitySeverity: (.properties."security-severity" // null | tonumber?)
+            }
+          }) | add) as $ruleMap |
+          [.runs[0].results[] |
+            $ruleMap[.ruleId] as $rule |
+            select($rule.securitySeverity != null and $rule.securitySeverity >= 7.0 and $rule.securitySeverity < 9.0)
+          ] | length
+        ' "$SARIF_FILE")
+
+        MEDIUM_SECURITY=$(jq -r '
+          (.runs[0].tool.extensions[0].rules | map({
+            (.id): {
+              securitySeverity: (.properties."security-severity" // null | tonumber?)
+            }
+          }) | add) as $ruleMap |
+          [.runs[0].results[] |
+            $ruleMap[.ruleId] as $rule |
+            select($rule.securitySeverity != null and $rule.securitySeverity >= 4.0 and $rule.securitySeverity < 7.0)
+          ] | length
+        ' "$SARIF_FILE")
+
+        LOW_SECURITY=$(jq -r '
+          (.runs[0].tool.extensions[0].rules | map({
+            (.id): {
+              securitySeverity: (.properties."security-severity" // null | tonumber?)
+            }
+          }) | add) as $ruleMap |
+          [.runs[0].results[] |
+            $ruleMap[.ruleId] as $rule |
+            select($rule.securitySeverity != null and $rule.securitySeverity >= 0.1 and $rule.securitySeverity < 4.0)
+          ] | length
+        ' "$SARIF_FILE")
+
         # Get environment variables (with defaults if not set)
         ACTION_VERSION="${CODEQL_ACTION_VERSION:-N/A}"
         SCAN_STARTED="${CODEQL_WORKFLOW_STARTED_AT:-N/A}"
@@ -244,6 +318,27 @@ runs:
         |--------|-------|
         | **Detected Files** | ${DETECTED_FILES} |
         | **Extracted Files** | ${EXTRACTED_FILES} |
+
+        ## 🔍 Results Summary
+
+        ### Code Security Findings
+        | Severity (CVSS) | Count |
+        |----------|-------|
+        | **Critical (9.0-10.0)** | ${CRITICAL_SECURITY} |
+        | **High (7.0-8.9)** | ${HIGH_SECURITY} |
+        | **Medium (4.0-6.9)** | ${MEDIUM_SECURITY} |
+        | **Low (0.1-3.9)** | ${LOW_SECURITY} |
+
+        ### Code Quality Findings
+        | Severity | Count |
+        |----------|-------|
+        | **Error** | ${ERROR_RESULTS} |
+        | **Warning** | ${WARNING_RESULTS} |
+        | **Note** | ${NOTE_RESULTS} |
+
+        ### Diagnostics
+        | **Metrics Queries** | ${NONE_RESULTS} |
+        | **Total Security + Quality** | ${TOTAL_RESULTS} |
 
         ## 📦 Artifacts
         - 📊 [HTML Report](${HTML_ARTIFACT_URL}) - \`${HTML_FILENAME}\`
