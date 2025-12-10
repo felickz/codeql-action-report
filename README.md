@@ -16,6 +16,9 @@ This action is designed to run after CodeQL init/analyze steps and will:
 Simply add this action after the CodeQL analyze step. It will automatically find SARIF files using the `CODEQL_ACTION_SARIF_RESULTS_OUTPUT_DIR` environment variable set by codeql-action:
 
 ```yaml
+
+...
+
 jobs:
   analyze:
     runs-on: ubuntu-latest
@@ -31,9 +34,6 @@ jobs:
         with:
           languages: ${{ matrix.language }}
 
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@v3
-
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
 
@@ -46,6 +46,8 @@ jobs:
 If you need to specify a custom SARIF directory, you can use the `sarif-input` parameter:
 
 ```yaml
+      ...
+
       - name: Perform CodeQL Analysis
         id: analyze
         uses: github/codeql-action/analyze@v3
