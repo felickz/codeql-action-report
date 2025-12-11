@@ -1,0 +1,19 @@
+name: Submit Action Dependencies
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [ main ]    
+  schedule:
+    - cron: '0 0 * * 0' # Weekly
+
+jobs:
+  submit-dependencies:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Required for dependency submission
+    steps:
+      - uses: actions/checkout@v4
+      - uses: forks-felickz/actions-dependency-submission@main
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
