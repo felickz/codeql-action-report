@@ -9,6 +9,23 @@ inputs:
   sarif-input:
     description: 'Path to the SARIF output directory. Defaults to CODEQL_ACTION_SARIF_RESULTS_OUTPUT_DIR environment variable set by codeql-action.'
     required: false
+  features:
+    description: |
+      Security and compliance features to enable. Format: YAML multi-line string with feature flags.
+      Available features:
+        - advanced-security: Check GitHub Advanced Security status (default: true)
+        - scorecard: Run OpenSSF Scorecard analysis (default: true)
+        - sbom: Generate and attest SBOM (default: true, already implemented)
+      Example:
+        features: |
+          advanced-security: true
+          scorecard: true
+          sbom: true
+    required: false
+    default: |
+      advanced-security: true
+      scorecard: true
+      sbom: true
 
 runs:
   using: 'composite'
@@ -20,9 +37,200 @@ runs:
 
     - name: Set environment variables
       shell: bash
+      env:
+        INPUT_FEATURES: ${{ inputs.features }}
       run: |
         REPO_NAME="$(echo '${{ github.repository }}' | tr '/' '-')"
         echo "REPO_NAME=$REPO_NAME" >> $GITHUB_ENV
+        
+        # Parse features input and set feature flags
+        # NOTE: This is a simple key:value parser. For complex YAML, consider using yq.
+        # Expected format: "key: value" pairs, one per line
+        # Default all features to true if not specified
+        FEATURE_ADVANCED_SECURITY="true"
+        FEATURE_SCORECARD="true"
+        FEATURE_SBOM="true"
+        
+        if [ -n "$INPUT_FEATURES" ]; then
+          # Parse YAML-style features input (simple key:value format only)
+          while IFS=: read -r key value; do
+            # Trim whitespace
+            key=$(echo "$key" | xargs)
+            value=$(echo "$value" | xargs)
+            
+            case "$key" in
+              "advanced-security")
+                FEATURE_ADVANCED_SECURITY="$value"
+                ;;
+              "scorecard")
+                FEATURE_SCORECARD="$value"
+                ;;
+              "sbom")
+                FEATURE_SBOM="$value"
+                ;;
+            esac
+          done <<< "$INPUT_FEATURES"
+        fi
+        
+        echo "FEATURE_ADVANCED_SECURITY=$FEATURE_ADVANCED_SECURITY" >> $GITHUB_ENV
+        echo "FEATURE_SCORECARD=$FEATURE_SCORECARD" >> $GITHUB_ENV
+        echo "FEATURE_SBOM=$FEATURE_SBOM" >> $GITHUB_ENV
+        
+        echo "Features enabled:"
+        echo "  - Advanced Security: $FEATURE_ADVANCED_SECURITY"
+        echo "  - Scorecard: $FEATURE_SCORECARD"
+        echo "  - SBOM: $FEATURE_SBOM"
+
+    - name: Fetch Advanced Security Status
+      id: advanced-security
+      if: env.FEATURE_ADVANCED_SECURITY == 'true'
+      continue-on-error: true
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        
+        echo "Fetching Advanced Security status for ${{ github.repository }}..."
+        
+        # Create output directory for security reports
+        mkdir -p security-reports
+        
+        # Fetch repository information with security_and_analysis
+        echo "Fetching repository security features..."
+        gh api /repos/${{ github.repository }} > security-reports/repo-info-temp.json
+        
+        # Extract security_and_analysis section
+        jq '.security_and_analysis' security-reports/repo-info-temp.json > security-reports/security-and-analysis.json
+        
+        # Check Dependabot vulnerability alerts status
+        echo "Checking Dependabot vulnerability alerts..."
+        VULN_ALERTS_STATUS="unknown"
+        if gh api /repos/${{ github.repository }}/vulnerability-alerts --silent 2>/dev/null; then
+          VULN_ALERTS_STATUS="enabled"
+        else
+          VULN_ALERTS_STATUS="disabled"
+        fi
+        echo "{\"enabled\": $([ "$VULN_ALERTS_STATUS" = "enabled" ] && echo "true" || echo "false")}" > security-reports/vulnerability-alerts.json
+        
+        # Check Dependabot automated security fixes
+        echo "Checking Dependabot automated security fixes..."
+        if gh api /repos/${{ github.repository }}/automated-security-fixes > security-reports/automated-security-fixes.json 2>/dev/null; then
+          echo "Automated security fixes status retrieved"
+        else
+          echo "{\"enabled\": false, \"paused\": false}" > security-reports/automated-security-fixes.json
+        fi
+        
+        # Combine all security information into a single JSON file
+        echo "Generating combined security status report..."
+        jq -n \
+          --arg repo "${{ github.repository }}" \
+          --arg timestamp "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+          --argjson security_analysis "$(cat security-reports/security-and-analysis.json)" \
+          --argjson vuln_alerts "$(cat security-reports/vulnerability-alerts.json)" \
+          --argjson auto_fixes "$(cat security-reports/automated-security-fixes.json)" \
+          '{
+            repository: $repo,
+            timestamp: $timestamp,
+            security_and_analysis: $security_analysis,
+            vulnerability_alerts: $vuln_alerts,
+            automated_security_fixes: $auto_fixes
+          }' > security-reports/advanced-security-status.json
+        
+        # Clean up temporary files
+        rm -f security-reports/repo-info-temp.json
+        
+        echo "✅ Advanced Security status fetched successfully"
+        cat security-reports/advanced-security-status.json
+
+    - name: Run OpenSSF Scorecard
+      id: scorecard
+      if: env.FEATURE_SCORECARD == 'true'
+      continue-on-error: true
+      shell: bash
+      env:
+        GITHUB_AUTH_TOKEN: ${{ github.token }}
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        
+        echo "Installing OpenSSF Scorecard CLI..."
+        
+        # Get latest release information using gh api
+        RELEASE_INFO=$(gh api /repos/ossf/scorecard/releases/latest)
+        VERSION=$(echo "$RELEASE_INFO" | jq -r '.tag_name')
+        echo "Using Scorecard version: ${VERSION}"
+        
+        # Download and install scorecard
+        DOWNLOAD_URL="https://github.com/ossf/scorecard/releases/download/${VERSION}/scorecard_${VERSION#v}_linux_amd64.tar.gz"
+        echo "Downloading from: $DOWNLOAD_URL"
+        
+        curl -sSfL "$DOWNLOAD_URL" -o scorecard.tgz
+        
+        # Note: Checksum verification would require downloading the checksums file and verifying
+        # For now, we rely on HTTPS and the official GitHub releases
+        
+        tar -xzf scorecard.tgz scorecard
+        sudo mv scorecard /usr/local/bin/scorecard
+        rm scorecard.tgz
+        
+        scorecard version
+        
+        # Create output directory
+        mkdir -p security-reports
+        
+        # Run Scorecard with JSON output
+        echo "Running OpenSSF Scorecard analysis..."
+        scorecard \
+          --repo "github.com/${{ github.repository }}" \
+          --format json \
+          --output security-reports/scorecard-results.json \
+          --show-details
+        
+        # Generate Markdown summary from JSON
+        echo "Generating Scorecard markdown summary..."
+        
+        SUMMARY_FILE="security-reports/scorecard-summary.md"
+        
+        {
+          echo "# OpenSSF Scorecard"
+          echo
+          echo "- Repo: \`${{ github.repository }}\`"
+          echo "- Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          echo
+          
+          SCORE="$(jq -r '.score // empty' security-reports/scorecard-results.json)"
+          DATE="$(jq -r '.date // empty' security-reports/scorecard-results.json)"
+          SC_VERSION="$(jq -r '.scorecard.version // empty' security-reports/scorecard-results.json)"
+          
+          if [ -n "$SCORE" ]; then
+            echo "## Overall"
+            echo
+            echo "**Score:** \`${SCORE}\`"
+            [ -n "$DATE" ] && echo "- Date: \`${DATE}\`"
+            [ -n "$SC_VERSION" ] && echo "- Scorecard version: \`${SC_VERSION}\`"
+            echo
+          fi
+          
+          echo "## Checks"
+          echo
+          echo "| Check | Score | Reason |"
+          echo "|---|---:|---|"
+          jq -r '.checks[]
+            | [
+                .name,
+                (.score|tostring),
+                (.reason | gsub("[\\r\\n]+";" ") | gsub("\\|"; "\\\\|") )
+              ]
+            | @tsv' security-reports/scorecard-results.json \
+          | while IFS=$'\t' read -r name score reason; do
+              printf '| %s | %s | %s |\n' "$name" "$score" "$reason"
+            done
+        } > "$SUMMARY_FILE"
+        
+        echo "✅ OpenSSF Scorecard analysis completed successfully"
+        echo "Summary saved to $SUMMARY_FILE"
+
 
     - name: Generate SARIF HTML reports
       shell: bash
@@ -90,6 +298,7 @@ runs:
 
     - name: Generate SBOM
       id: generate-sbom
+      if: env.FEATURE_SBOM == 'true'
       continue-on-error: true
       shell: bash
       env:
@@ -122,12 +331,24 @@ runs:
         path: sbom.spdx.json
         if-no-files-found: warn
 
+    - name: Upload Security Reports
+      id: upload-security-reports
+      if: steps.advanced-security.outcome == 'success' || steps.scorecard.outcome == 'success'
+      uses: actions/upload-artifact@v5
+      with:
+        name: ${{ env.REPO_NAME }}-${{github.sha}}-security-reports
+        path: security-reports/
+        if-no-files-found: warn
+
     - name: Attest Report and SARIF with SBOM
       id: attest-sbom
       if: steps.generate-sbom.outcome == 'success'
       uses: actions/attest-sbom@v3
       with:
-        subject-path: sarif_*.html, *.sarif
+        subject-path: |
+          sarif_*.html
+          *.sarif
+          security-reports/*.json
         sbom-path: sbom.spdx.json
         show-summary: false # we report in the final summary
 
@@ -136,7 +357,10 @@ runs:
       if: steps.generate-sbom.outcome != 'success'
       uses: actions/attest-build-provenance@v3
       with:
-        subject-path: sarif_*.html, *.sarif
+        subject-path: |
+          sarif_*.html
+          *.sarif
+          security-reports/*.json
         show-summary: false # we report in the final summary
 
     - name: Generate CodeQL Scan Summary
@@ -146,9 +370,12 @@ runs:
         HTML_ARTIFACT_URL: ${{ steps.upload-sarif-html.outputs.artifact-url }}
         SARIF_ARTIFACT_URL: ${{ steps.upload-sarif.outputs.artifact-url }}
         SBOM_ARTIFACT_URL: ${{ steps.upload-sbom.outputs.artifact-url }}
+        SECURITY_REPORTS_ARTIFACT_URL: ${{ steps.upload-security-reports.outputs.artifact-url }}
         SBOM_ATTESTATION_URL: ${{ steps.attest-sbom.outputs.attestation-url }}
         PROVENANCE_ATTESTATION_URL: ${{ steps.attest-provenance.outputs.attestation-url }}
         SBOM_GENERATED: ${{ steps.generate-sbom.outcome == 'success' && 'true' || 'false' }}
+        ADVANCED_SECURITY_ENABLED: ${{ steps.advanced-security.outcome == 'success' && 'true' || 'false' }}
+        SCORECARD_ENABLED: ${{ steps.scorecard.outcome == 'success' && 'true' || 'false' }}
         GITHUB_REPO_OWNER: ${{ github.repository_owner }}
       run: |
         SARIF_DIR="$INPUT_SARIF_DIR"
@@ -365,6 +592,15 @@ runs:
         - 📊 [HTML Report](${HTML_ARTIFACT_URL}) - \`${HTML_FILENAME}\`
         - 🛡️ [SARIF File](${SARIF_ARTIFACT_URL}) - \`${SARIF_FILENAME}\`
         - 📋 [SBOM](${SBOM_ARTIFACT_URL:-N/A}) - \`${SBOM_FILENAME}\`
+        EOF
+        
+        if [ "${ADVANCED_SECURITY_ENABLED}" = "true" ] || [ "${SCORECARD_ENABLED}" = "true" ]; then
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+        - 🔒 [Security Reports](${SECURITY_REPORTS_ARTIFACT_URL})
+        EOF
+        fi
+        
+        cat >> $GITHUB_STEP_SUMMARY << EOF
 
         ## 🔐 Attestations
         EOF
@@ -396,6 +632,97 @@ runs:
         gh attestation verify --owner ${GITHUB_REPO_OWNER} ${SARIF_FILENAME}
         \`\`\`
         EOF
+        fi
+
+        # Add Advanced Security status if enabled
+        if [ "${ADVANCED_SECURITY_ENABLED}" = "true" ] && [ -f "security-reports/advanced-security-status.json" ]; then
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+
+        ## 🛡️ GitHub Advanced Security Status
+
+        EOF
+          
+          # Extract and display security_and_analysis features
+          if jq -e '.security_and_analysis' security-reports/advanced-security-status.json > /dev/null 2>&1; then
+            cat >> $GITHUB_STEP_SUMMARY << EOF
+        ### Security Features
+        | Feature | Status |
+        |---------|--------|
+        EOF
+            
+            # Advanced Security
+            if jq -e '.security_and_analysis.advanced_security' security-reports/advanced-security-status.json > /dev/null 2>&1; then
+              ADVANCED_SEC_STATUS=$(jq -r '.security_and_analysis.advanced_security.status // "N/A"' security-reports/advanced-security-status.json)
+              echo "| Advanced Security | \`${ADVANCED_SEC_STATUS}\` |" >> $GITHUB_STEP_SUMMARY
+            fi
+            
+            # Secret Scanning
+            if jq -e '.security_and_analysis.secret_scanning' security-reports/advanced-security-status.json > /dev/null 2>&1; then
+              SECRET_SCAN_STATUS=$(jq -r '.security_and_analysis.secret_scanning.status // "N/A"' security-reports/advanced-security-status.json)
+              echo "| Secret Scanning | \`${SECRET_SCAN_STATUS}\` |" >> $GITHUB_STEP_SUMMARY
+            fi
+            
+            # Secret Scanning Push Protection
+            if jq -e '.security_and_analysis.secret_scanning_push_protection' security-reports/advanced-security-status.json > /dev/null 2>&1; then
+              PUSH_PROT_STATUS=$(jq -r '.security_and_analysis.secret_scanning_push_protection.status // "N/A"' security-reports/advanced-security-status.json)
+              echo "| Secret Scanning Push Protection | \`${PUSH_PROT_STATUS}\` |" >> $GITHUB_STEP_SUMMARY
+            fi
+            
+            # Dependabot Security Updates
+            if jq -e '.security_and_analysis.dependabot_security_updates' security-reports/advanced-security-status.json > /dev/null 2>&1; then
+              DEPENDABOT_STATUS=$(jq -r '.security_and_analysis.dependabot_security_updates.status // "N/A"' security-reports/advanced-security-status.json)
+              echo "| Dependabot Security Updates | \`${DEPENDABOT_STATUS}\` |" >> $GITHUB_STEP_SUMMARY
+            fi
+            
+            # Secret Scanning Non-Provider Patterns
+            if jq -e '.security_and_analysis.secret_scanning_non_provider_patterns' security-reports/advanced-security-status.json > /dev/null 2>&1; then
+              NON_PROVIDER_STATUS=$(jq -r '.security_and_analysis.secret_scanning_non_provider_patterns.status // "N/A"' security-reports/advanced-security-status.json)
+              echo "| Secret Scanning Non-Provider Patterns | \`${NON_PROVIDER_STATUS}\` |" >> $GITHUB_STEP_SUMMARY
+            fi
+            
+            # Secret Scanning AI Detection
+            if jq -e '.security_and_analysis.secret_scanning_ai_detection' security-reports/advanced-security-status.json > /dev/null 2>&1; then
+              AI_DETECT_STATUS=$(jq -r '.security_and_analysis.secret_scanning_ai_detection.status // "N/A"' security-reports/advanced-security-status.json)
+              echo "| Secret Scanning AI Detection | \`${AI_DETECT_STATUS}\` |" >> $GITHUB_STEP_SUMMARY
+            fi
+            
+            # Secret Scanning Validity Checks
+            if jq -e '.security_and_analysis.secret_scanning_validity_checks' security-reports/advanced-security-status.json > /dev/null 2>&1; then
+              VALIDITY_STATUS=$(jq -r '.security_and_analysis.secret_scanning_validity_checks.status // "N/A"' security-reports/advanced-security-status.json)
+              echo "| Secret Scanning Validity Checks | \`${VALIDITY_STATUS}\` |" >> $GITHUB_STEP_SUMMARY
+            fi
+            
+            cat >> $GITHUB_STEP_SUMMARY << EOF
+
+        EOF
+          fi
+          
+          # Vulnerability Alerts
+          VULN_ALERTS_ENABLED=$(jq -r '.vulnerability_alerts.enabled // false' security-reports/advanced-security-status.json)
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+        ### Dependabot
+        | Feature | Status |
+        |---------|--------|
+        | Vulnerability Alerts | \`$([ "$VULN_ALERTS_ENABLED" = "true" ] && echo "enabled" || echo "disabled")\` |
+        EOF
+          
+          # Automated Security Fixes
+          AUTO_FIX_ENABLED=$(jq -r '.automated_security_fixes.enabled // false' security-reports/advanced-security-status.json)
+          AUTO_FIX_PAUSED=$(jq -r '.automated_security_fixes.paused // false' security-reports/advanced-security-status.json)
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+        | Automated Security Fixes | \`$([ "$AUTO_FIX_ENABLED" = "true" ] && echo "enabled" || echo "disabled")\` $([ "$AUTO_FIX_PAUSED" = "true" ] && echo "(paused)" || echo "") |
+
+        EOF
+        fi
+        
+        # Add Scorecard summary if enabled
+        if [ "${SCORECARD_ENABLED}" = "true" ] && [ -f "security-reports/scorecard-summary.md" ]; then
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+
+        ---
+
+        EOF
+          cat security-reports/scorecard-summary.md >> $GITHUB_STEP_SUMMARY
         fi
 
         cat >> $GITHUB_STEP_SUMMARY << EOF
