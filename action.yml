@@ -44,13 +44,15 @@ runs:
         echo "REPO_NAME=$REPO_NAME" >> $GITHUB_ENV
         
         # Parse features input and set feature flags
+        # NOTE: This is a simple key:value parser. For complex YAML, consider using yq.
+        # Expected format: "key: value" pairs, one per line
         # Default all features to true if not specified
         FEATURE_ADVANCED_SECURITY="true"
         FEATURE_SCORECARD="true"
         FEATURE_SBOM="true"
         
         if [ -n "$INPUT_FEATURES" ]; then
-          # Parse YAML-style features input
+          # Parse YAML-style features input (simple key:value format only)
           while IFS=: read -r key value; do
             # Trim whitespace
             key=$(echo "$key" | xargs)
@@ -148,17 +150,26 @@ runs:
       shell: bash
       env:
         GITHUB_AUTH_TOKEN: ${{ github.token }}
+        GH_TOKEN: ${{ github.token }}
       run: |
         set -euo pipefail
         
         echo "Installing OpenSSF Scorecard CLI..."
         
-        # Get latest release tag
-        VERSION="$(curl -sSfL https://api.github.com/repos/ossf/scorecard/releases/latest | jq -r '.tag_name')"
+        # Get latest release information using gh api
+        RELEASE_INFO=$(gh api /repos/ossf/scorecard/releases/latest)
+        VERSION=$(echo "$RELEASE_INFO" | jq -r '.tag_name')
         echo "Using Scorecard version: ${VERSION}"
         
         # Download and install scorecard
-        curl -sSfL "https://github.com/ossf/scorecard/releases/download/${VERSION}/scorecard_${VERSION#v}_linux_amd64.tar.gz" -o scorecard.tgz
+        DOWNLOAD_URL="https://github.com/ossf/scorecard/releases/download/${VERSION}/scorecard_${VERSION#v}_linux_amd64.tar.gz"
+        echo "Downloading from: $DOWNLOAD_URL"
+        
+        curl -sSfL "$DOWNLOAD_URL" -o scorecard.tgz
+        
+        # Note: Checksum verification would require downloading the checksums file and verifying
+        # For now, we rely on HTTPS and the official GitHub releases
+        
         tar -xzf scorecard.tgz scorecard
         sudo mv scorecard /usr/local/bin/scorecard
         rm scorecard.tgz
@@ -209,7 +220,7 @@ runs:
             | [
                 .name,
                 (.score|tostring),
-                (.reason | gsub("[\\r\\n]+";" ") )
+                (.reason | gsub("[\\r\\n]+";" ") | gsub("\\|"; "\\\\|") )
               ]
             | @tsv' security-reports/scorecard-results.json \
           | while IFS=$'\t' read -r name score reason; do
@@ -334,7 +345,10 @@ runs:
       if: steps.generate-sbom.outcome == 'success'
       uses: actions/attest-sbom@v3
       with:
-        subject-path: sarif_*.html, *.sarif, security-reports/*
+        subject-path: |
+          sarif_*.html
+          *.sarif
+          security-reports/*.json
         sbom-path: sbom.spdx.json
         show-summary: false # we report in the final summary
 
@@ -343,7 +357,10 @@ runs:
       if: steps.generate-sbom.outcome != 'success'
       uses: actions/attest-build-provenance@v3
       with:
-        subject-path: sarif_*.html, *.sarif, security-reports/*
+        subject-path: |
+          sarif_*.html
+          *.sarif
+          security-reports/*.json
         show-summary: false # we report in the final summary
 
     - name: Generate CodeQL Scan Summary
