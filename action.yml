@@ -134,7 +134,7 @@ runs:
     - name: Attest Report and SARIF
       id: attest-provenance
       if: steps.generate-sbom.outcome != 'success'
-      uses: actions/attest-build-provenance@v3
+      uses: actions/attest-build-provenance@v4
       with:
         subject-path: sarif_*.html, *.sarif
         show-summary: false # we report in the final summary
