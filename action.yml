@@ -125,7 +125,7 @@ runs:
     - name: Attest Report and SARIF with SBOM
       id: attest-sbom
       if: steps.generate-sbom.outcome == 'success'
-      uses: actions/attest-sbom@v3
+      uses: actions/attest-sbom@v4
       with:
         subject-path: sarif_*.html, *.sarif
         sbom-path: sbom.spdx.json
