@@ -6,6 +6,7 @@ on:
     branches: [ main ]    
   schedule:
     - cron: '0 0 * * 0' # Weekly
+  workflow_dispatch:
 
 jobs:
   submit-dependencies:
@@ -13,7 +14,11 @@ jobs:
     permissions:
       contents: write # Required for dependency submission
     steps:
-      - uses: actions/checkout@v4
-      - uses: forks-felickz/actions-dependency-submission@main
+      # - uses: actions/checkout@v4
+      # - uses: forks-felickz/actions-dependency-submission@main
+      #   with:
+      #     token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/checkout@v6
+      - uses: jessehouwing/actions-dependency-submission@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
